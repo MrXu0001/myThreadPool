@@ -240,6 +240,8 @@ public class MyThreadPoolExecutor {
     //===========================================以上为线程池的主要方法getTask======================================//
 
     //===========================================以下为线程池的主要方法runWorker======================================//
+    // runWorker()方法会在execute()方法中被调用，用于执行任务,
+    // 传入的worker里有任务，则执行任务，否则调用getTask()方法获取任务，如果获取到任务则执行任务，否则返回null
     final void runWorker(MyThreadPoolExecutor.Worker w) {
         Thread wt = Thread.currentThread();
         Runnable task = w.firstTask;
@@ -249,10 +251,6 @@ public class MyThreadPoolExecutor {
         try {
             while (task != null || (task = getTask()) != null) {
                 w.lock();
-                // If pool is stopping, ensure thread is interrupted;
-                // if not, ensure thread is not interrupted.  This
-                // requires a recheck in second case to deal with
-                // shutdownNow race while clearing interrupt
                 if ((runStateAtLeast(ctl.get(), STOP) ||
                         (Thread.interrupted() &&
                                 runStateAtLeast(ctl.get(), STOP))) &&
@@ -478,6 +476,7 @@ public class MyThreadPoolExecutor {
     }
 
     //===========================================以下为线程池的核心方法executor======================================//
+    // execute()-->addWorker()-->添加成功，则执行Worker.thread.start()-->worker.run()-->runWorker()
     public void execute(Runnable command) {
         if (command == null)
             throw new NullPointerException();
@@ -496,13 +495,20 @@ public class MyThreadPoolExecutor {
             //处于SHUTDOWN  或者 STOP 状态的都不会执行最新的任务 所以执行拒绝策略
             if (!isRunning(recheck) && remove(command))
                 reject(command);
-            //走到这里 【说明当前线程池的状态是 RUNNING 状态】  并且 【线程池里面没有工作线程 所以需要创建非核心线程去执行工作队列里面的任务】
+            // 走到这里说明【当前线程池的状态是 RUNNING 状态】 或者是 【shutdown状态但是工作队列中还存在当前刚刚加入的command任务】
+            // 线程池里面没有工作线程 所以需要创建非核心线程去执行工作队列里面的任务
             else if (workerCountOf(recheck) == 0)
                 addWorker(null, false);
         }
-        // 走到这里说明工作队列已经满了,即上面的第二个条件没满足 需要创建非核心线程去执行工作队列里面的任务，
+        // 如果上面的第二个条件没满足，说明工作队列已经满了,即需要创建非核心线程去执行工作队列里面的任务
         else if (!addWorker(command, false))
-            //假如添加非核心线程失败 什么会导致失败？ 即工作线程数已经超过了线程池的最大线程数量[maximumPoolSize]
+            //假如添加非核心线程失败 什么会导致失败？
+            //1，线程池的状态是 STOP 因为STOP状态不需要处理任何任务  那么不需要创建工作线程
+            // OR
+            //2，线程池的状态是 SHUTDOWN 并且 firstTask不为空  因为SHUTDOWN状态下 线程池只会处理工作队列里面的剩余的任务  那么不需要创建工作线程
+            // OR
+            //3，线程池的状态是 SHUTDOWN 并且 firstTask == null 并且 工作队列里面没有剩余的任务 那么不需要创建工作线程
+            //4. 工作线程数已经超过了线程池的最大线程数量[maximumPoolSize]
             //执行拒绝策略
             reject(command);
     }
